@@ -1,0 +1,397 @@
+; ============================================================================
+; NUMERA v0.1.0 — Layer 5: Integration API
+; SCRAWL Implementation (ROSETTA Transpiler Format)
+; ============================================================================
+;
+; The public interface wrapping all five lower layers into a unified API.
+; Provides: evaluate, batch evaluation, variable bindings, introspection,
+; JSON-compatible response format, and full pipeline access.
+;
+; Usage (ROSETTA pseudocode):
+;   S_STORE R[50], 347          ; left operand
+;   S_STORE R[51], 286          ; right operand
+;   S_STORE R[901], 3           ; operator = PLUS
+;   X_CALL  @NUMERA_EVALUATE    ; full pipeline
+;   ; R[950] = 633, R[951] = 1 (verified)
+;
+; © 2026 ML Innovations LLC. All rights reserved.
+; M. L. McKnight | ml.innovations.research.lab@gmail.com
+; Pheba, Mississippi
+; ============================================================================
+
+; ═══════════════════════════════════════════════════════════════════════════
+; VERSION & METADATA
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_META_INIT:
+    ; Version: 0.1.0 encoded as integers
+    S_STORE     R[970], 0                   ; major
+    S_STORE     R[971], 1                   ; minor
+    S_STORE     R[972], 0                   ; patch
+    ; Engine constants
+    S_STORE     R[973], 111                 ; total_rules
+    S_STORE     R[974], 10                  ; total_domains
+    S_STORE     R[975], 10                  ; total_tiers
+    S_STORE     R[976], 99                  ; total_pattern_types
+    ; Layer count
+    S_STORE     R[977], 6                   ; layers 0-5
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; VARIABLE STORAGE (Session Persistence)
+; ═══════════════════════════════════════════════════════════════════════════
+; R[1000]-R[1019]: Variable names (as integer IDs)
+; R[1020]-R[1039]: Variable values
+; R[999] = variable count
+
+@VAR_INIT:
+    S_STORE     R[999], 0                   ; no variables
+    X_RET
+
+; Store variable: R[80] = name_id, R[81] = value
+@VAR_SET:
+    ; Check if variable already exists
+    S_STORE     R[87], 0                    ; index = 0
+@VAR_SET_SEARCH:
+    X_CMP       R[87], R[999]
+    X_JZ        @VAR_SET_NEW               ; not found, add new
+
+    T_COMPOSE   R[88], ADD, R[87], R[3]    ; offset for names
+    ; (simplified: check R[1000+index])
+    ; If found, update value at R[1020+index]
+    T_COMPOSE   R[87], ADD, R[87], R[3]
+    X_JMP       @VAR_SET_SEARCH
+
+@VAR_SET_NEW:
+    ; Add new variable at end
+    ; R[1000 + count] = name, R[1020 + count] = value
+    T_COMPOSE   R[88], ADD, R[999], R[3]   ; calculate slot
+    S_STORE     R[88], R[80]               ; store name (simplified)
+    S_STORE     R[88], R[81]               ; store value (simplified)
+    T_COMPOSE   R[999], ADD, R[999], R[3]  ; count++
+    X_RET
+
+; Load variable: R[80] = name_id → R[81] = value
+@VAR_GET:
+    S_STORE     R[81], 0                    ; default = 0
+    ; (simplified: linear search through variable table)
+    X_RET
+
+; Clear all variables
+@VAR_CLEAR:
+    S_STORE     R[999], 0
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; EVALUATE — Full Pipeline Entry Point
+; ═══════════════════════════════════════════════════════════════════════════
+; The primary API. Runs the complete NUMERA pipeline:
+;   Classify → Retrieve → Execute → Verify
+;
+; Input:  R[900] = AST node type
+;         R[901] = operator
+;         R[902] = left operand magnitude
+;         R[903] = right operand magnitude
+;         R[50]  = left operand value
+;         R[51]  = right operand value
+;         R[904] = has_variables, R[905] = is_equation, R[906] = function_id
+;
+; Output: R[950] = result
+;         R[951] = verified (1/0)
+;         R[952] = step_count
+;         R[953] = confidence (100 = 1.0)
+;         R[910] = pattern_type
+;         R[911] = domain
+;         R[82]  = tier
+;         R[89]  = chain_length
+;         R[954] = error flag (0 = success)
+
+@NUMERA_EVALUATE:
+    ; Step 1: Classify
+    X_CALL      @CLASSIFY                   ; → R[910], R[911]
+
+    ; Step 2: Retrieve rule chain
+    X_CALL      @RETRIEVE                   ; → R[80], R[82], R[89], R[90]-R[99]
+
+    ; Step 3: Execute
+    X_CALL      @EXEC_BINARY                ; → R[950], R[951], R[952], R[953]
+
+    ; Step 4: Package response (all results in registers)
+    ; Response is available across R[950]-R[954], R[910]-R[911], R[82], R[89]
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; EVALUATE WITH VARIABLES
+; ═══════════════════════════════════════════════════════════════════════════
+; Substitutes variables before evaluation.
+; Input: same as EVALUATE, but R[50]/R[51] may be variable references
+;        R[904] = 1 if has variables
+
+@NUMERA_EVALUATE_WITH_VARS:
+    ; Check if variables need substitution
+    X_CMP       R[904], R[3]               ; has_variables?
+    X_JNZ       @EVAL_SUBSTITUTE
+    X_JMP       @NUMERA_EVALUATE            ; no vars, direct evaluate
+
+@EVAL_SUBSTITUTE:
+    ; Substitute R[50] if it's a variable reference
+    ; (In full impl: check if value is a var_id, look up in var table)
+    ; For now: variables already resolved by caller
+    X_JMP       @NUMERA_EVALUATE
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; BATCH EVALUATE
+; ═══════════════════════════════════════════════════════════════════════════
+; Process multiple expressions. Uses state registers for batch tracking.
+; R[980] = batch_total, R[981] = batch_succeeded, R[982] = batch_failed
+; R[983] = all_verified (1/0)
+;
+; Input:  Expressions pre-loaded in scratch registers
+;         R[980] = total count
+; Output: R[981] = succeeded, R[982] = failed, R[983] = all_verified
+
+@NUMERA_BATCH_INIT:
+    S_STORE     R[981], 0                   ; succeeded = 0
+    S_STORE     R[982], 0                   ; failed = 0
+    S_STORE     R[983], 1                   ; all_verified = 1 (optimistic)
+    X_RET
+
+@NUMERA_BATCH_RECORD:
+    ; After each NUMERA_EVALUATE, record result
+    X_CMP       R[954], R[2]               ; error?
+    X_JNZ       @BATCH_RECORD_FAIL
+
+    T_COMPOSE   R[981], ADD, R[981], R[3]  ; succeeded++
+    ; Check verification
+    X_CMP       R[951], R[3]               ; verified?
+    X_JZ        @BATCH_RECORD_DONE
+    S_STORE     R[983], 0                   ; not all verified
+    X_JMP       @BATCH_RECORD_DONE
+
+@BATCH_RECORD_FAIL:
+    T_COMPOSE   R[982], ADD, R[982], R[3]  ; failed++
+    S_STORE     R[983], 0
+
+@BATCH_RECORD_DONE:
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; INTROSPECTION — Library Stats
+; ═══════════════════════════════════════════════════════════════════════════
+; Output: R[973]-R[976] populated with stats
+
+@NUMERA_INTROSPECT:
+    X_CALL      @NUMERA_META_INIT
+    ; Stats already available from meta init
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; RESPONSE FORMATTING (JSON-compatible integer encoding)
+; ═══════════════════════════════════════════════════════════════════════════
+; Encodes response fields into a structured register block for
+; SYNAPSE wire transmission or ROSETTA human-readable output.
+
+@NUMERA_FORMAT_RESPONSE:
+    ; Response block: R[1050]-R[1069]
+    S_STORE     R[1050], R[950]            ; result
+    S_STORE     R[1051], R[951]            ; verified
+    S_STORE     R[1052], R[953]            ; confidence
+    S_STORE     R[1053], R[952]            ; step_count
+    S_STORE     R[1054], R[910]            ; pattern_type
+    S_STORE     R[1055], R[911]            ; domain
+    S_STORE     R[1056], R[82]             ; tier
+    S_STORE     R[1057], R[89]             ; chain_length
+    S_STORE     R[1058], R[954]            ; error_flag
+    S_STORE     R[1059], R[970]            ; version_major
+    S_STORE     R[1060], R[971]            ; version_minor
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; FULL INIT — Initialize all layers
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_FULL_INIT:
+    X_CALL      @NUMERA_META_INIT
+    X_CALL      @VALUE_CORE_INIT_CONSTANTS
+    X_CALL      @VALUE_CORE_INIT_ADD
+    X_CALL      @VALUE_CORE_INIT_MUL
+    X_CALL      @RULE_LIB_INIT_DOMAINS
+    X_CALL      @RULE_LIB_INIT_TIER0
+    X_CALL      @RULE_LIB_INIT_TIER1
+    X_CALL      @RULE_LIB_INIT_TIER2
+    X_CALL      @RULE_LIB_INIT_TIER3
+    X_CALL      @RULE_LIB_INIT_TIER4
+    X_CALL      @RULE_LIB_INIT_TIER5
+    X_CALL      @RULE_LIB_INIT_TIER6
+    X_CALL      @RULE_LIB_INIT_TIER7
+    X_CALL      @RULE_LIB_INIT_TIER8
+    X_CALL      @RULE_LIB_INIT_TIER9
+    X_CALL      @PATTERN_INIT_CONSTANTS
+    X_CALL      @PATTERN_INIT_TYPES
+    X_CALL      @RETRIEVAL_INIT_INDEX
+    X_CALL      @VAR_INIT
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SELF-TESTS
+; ═══════════════════════════════════════════════════════════════════════════
+
+@INTEGRATION_SELFTEST:
+    X_CALL      @NUMERA_FULL_INIT
+
+    ; --- Test 1: Full pipeline — 3 + 5 = 8 ---
+    S_STORE     R[900], 3                   ; AST_BINARY_OP
+    S_STORE     R[901], 3                   ; TOKEN_PLUS
+    S_STORE     R[902], 3
+    S_STORE     R[903], 5
+    S_STORE     R[50], 3
+    S_STORE     R[51], 5
+    S_STORE     R[904], 0
+    S_STORE     R[905], 0
+    S_STORE     R[906], 0
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 8            ; result = 8
+    I_VERIFY    R[26], R[951], 1            ; verified
+    I_VERIFY    R[26], R[911], 0            ; domain = CoreArithmetic
+
+    ; --- Test 2: Full pipeline — 347 + 286 = 633 ---
+    S_STORE     R[902], 347
+    S_STORE     R[903], 286
+    S_STORE     R[50], 347
+    S_STORE     R[51], 286
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 633
+    I_VERIFY    R[26], R[951], 1
+    I_VERIFY    R[26], R[911], 1            ; domain = ExtendedArithmetic
+
+    ; --- Test 3: Full pipeline — 12 * 34 = 408 ---
+    S_STORE     R[901], 5                   ; TOKEN_STAR
+    S_STORE     R[902], 12
+    S_STORE     R[903], 34
+    S_STORE     R[50], 12
+    S_STORE     R[51], 34
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 408
+    I_VERIFY    R[26], R[951], 1
+
+    ; --- Test 4: Division by zero → error ---
+    S_STORE     R[901], 6                   ; TOKEN_SLASH
+    S_STORE     R[50], 10
+    S_STORE     R[51], 0
+    S_STORE     R[902], 10
+    S_STORE     R[903], 0
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[954], 1            ; error flag
+
+    ; --- Test 5: Metadata correct ---
+    X_CALL      @NUMERA_INTROSPECT
+    I_VERIFY    R[26], R[973], 111          ; total rules
+    I_VERIFY    R[26], R[974], 10           ; total domains
+    I_VERIFY    R[26], R[977], 6            ; 6 layers
+
+    ; --- Test 6: Response formatting ---
+    S_STORE     R[901], 3                   ; TOKEN_PLUS
+    S_STORE     R[50], 7
+    S_STORE     R[51], 8
+    S_STORE     R[902], 7
+    S_STORE     R[903], 8
+    S_STORE     R[904], 0
+    S_STORE     R[905], 0
+    S_STORE     R[906], 0
+    X_CALL      @NUMERA_EVALUATE
+    X_CALL      @NUMERA_FORMAT_RESPONSE
+    I_VERIFY    R[26], R[1050], 15          ; result = 15
+    I_VERIFY    R[26], R[1051], 1           ; verified = true
+
+    ; --- Test 7: Batch tracking ---
+    X_CALL      @NUMERA_BATCH_INIT
+    ; Eval 1: 3+5
+    S_STORE     R[50], 3
+    S_STORE     R[51], 5
+    S_STORE     R[901], 3
+    S_STORE     R[902], 3
+    S_STORE     R[903], 5
+    X_CALL      @NUMERA_EVALUATE
+    X_CALL      @NUMERA_BATCH_RECORD
+    ; Eval 2: 2*3
+    S_STORE     R[50], 2
+    S_STORE     R[51], 3
+    S_STORE     R[901], 5
+    S_STORE     R[902], 2
+    S_STORE     R[903], 3
+    X_CALL      @NUMERA_EVALUATE
+    X_CALL      @NUMERA_BATCH_RECORD
+    I_VERIFY    R[26], R[981], 2            ; 2 succeeded
+
+    ; --- Test 8: Version info ---
+    I_VERIFY    R[26], R[970], 0            ; major = 0
+    I_VERIFY    R[26], R[971], 1            ; minor = 1
+    I_VERIFY    R[26], R[972], 0            ; patch = 0
+
+    ; --- Test 9: Classification flows to retrieval ---
+    S_STORE     R[900], 3                   ; BINARY_OP
+    S_STORE     R[901], 3                   ; PLUS
+    S_STORE     R[902], 3
+    S_STORE     R[903], 5
+    S_STORE     R[904], 0
+    S_STORE     R[905], 0
+    S_STORE     R[906], 0
+    X_CALL      @CLASSIFY
+    I_VERIFY    R[26], R[910], 0            ; SingleDigitAddition
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 0             ; core.add
+    I_VERIFY    R[26], R[89], 1             ; chain = 1
+
+    ; --- Test 10: All 4 basic operations through full pipeline ---
+    ; Add
+    S_STORE     R[50], 9
+    S_STORE     R[51], 7
+    S_STORE     R[901], 3
+    S_STORE     R[902], 9
+    S_STORE     R[903], 7
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 16
+    ; Subtract
+    S_STORE     R[50], 16
+    S_STORE     R[51], 7
+    S_STORE     R[901], 4
+    S_STORE     R[902], 16
+    S_STORE     R[903], 7
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 9
+    ; Multiply
+    S_STORE     R[50], 6
+    S_STORE     R[51], 7
+    S_STORE     R[901], 5
+    S_STORE     R[902], 6
+    S_STORE     R[903], 7
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 42
+    ; Divide
+    S_STORE     R[50], 42
+    S_STORE     R[51], 7
+    S_STORE     R[901], 6
+    S_STORE     R[902], 42
+    S_STORE     R[903], 7
+    X_CALL      @NUMERA_EVALUATE
+    I_VERIFY    R[26], R[950], 6
+
+    X_YIELD     10
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ENTRY POINT
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_LAYER5_ENTRY:
+    X_CALL      @INTEGRATION_SELFTEST
+    X_HALT

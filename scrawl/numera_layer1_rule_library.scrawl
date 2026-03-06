@@ -1,0 +1,318 @@
+; ============================================================================
+; NUMERA v0.1.0 — Layer 1: Rule Library
+; SCRAWL Implementation (ROSETTA Transpiler Format)
+; ============================================================================
+;
+; Complete mathematical knowledge base: 111 rules organized into
+; 10 tiers across 10 domains. Each rule declares ID, domain, tier,
+; operation, prerequisites, inverse, and properties.
+;
+; © 2026 ML Innovations LLC. All rights reserved.
+; M. L. McKnight | ml.innovations.research.lab@gmail.com
+; ============================================================================
+
+; ═══════════════════════════════════════════════════════════════════════════
+; DOMAIN CONSTANTS
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LIB_INIT_DOMAINS:
+    S_STORE     R[500], 0                   ; CoreArithmetic
+    S_STORE     R[501], 1                   ; ExtendedArithmetic
+    S_STORE     R[502], 2                   ; Properties
+    S_STORE     R[503], 3                   ; PreAlgebra
+    S_STORE     R[504], 4                   ; Algebra
+    S_STORE     R[505], 5                   ; AdvancedAlgebra
+    S_STORE     R[506], 6                   ; Trigonometry
+    S_STORE     R[507], 7                   ; Calculus
+    S_STORE     R[508], 8                   ; LinearAlgebra
+    S_STORE     R[509], 9                   ; AbstractApplied
+    ; Rule counts per domain
+    S_STORE     R[510], 4                   ; CoreArith: 4
+    S_STORE     R[511], 7                   ; Extended: 7
+    S_STORE     R[512], 6                   ; Properties: 6
+    S_STORE     R[513], 18                  ; PreAlgebra: 18
+    S_STORE     R[514], 13                  ; Algebra: 13
+    S_STORE     R[515], 15                  ; AdvancedAlgebra: 15
+    S_STORE     R[516], 8                   ; Trigonometry: 8
+    S_STORE     R[517], 14                  ; Calculus: 14
+    S_STORE     R[518], 12                  ; LinearAlgebra: 12
+    S_STORE     R[519], 14                  ; AbstractApplied: 14
+    S_STORE     R[520], 111                 ; Total rules
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; TIER 0: CORE ARITHMETIC (4 rules, IDs 0-3)
+; ═══════════════════════════════════════════════════════════════════════════
+; Format: [ID, domain, tier, operation, prereq_count, inverse_id]
+
+@RULE_LIB_INIT_TIER0:
+    ; Rule 0: core.add
+    S_STORE     R[600], 0                   ; rule_id
+    S_STORE     R[601], 0                   ; domain = CoreArithmetic
+    S_STORE     R[602], 0                   ; tier = 0
+    S_STORE     R[603], 1                   ; op = ValueCoreAdd
+    S_STORE     R[604], 0                   ; prereq_count = 0
+    S_STORE     R[605], 1                   ; inverse = core.sub
+    ; Rule 1: core.sub
+    S_STORE     R[610], 1
+    S_STORE     R[611], 0
+    S_STORE     R[612], 0
+    S_STORE     R[613], 2                   ; op = ValueCoreSub
+    S_STORE     R[614], 0
+    S_STORE     R[615], 0                   ; inverse = core.add
+    ; Rule 2: core.mul
+    S_STORE     R[620], 2
+    S_STORE     R[621], 0
+    S_STORE     R[622], 0
+    S_STORE     R[623], 3                   ; op = ValueCoreMul
+    S_STORE     R[624], 0
+    S_STORE     R[625], 3                   ; inverse = core.div
+    ; Rule 3: core.div
+    S_STORE     R[630], 3
+    S_STORE     R[631], 0
+    S_STORE     R[632], 0
+    S_STORE     R[633], 4                   ; op = ValueCoreDiv
+    S_STORE     R[634], 0
+    S_STORE     R[635], 2                   ; inverse = core.mul
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; TIER 1: EXTENDED ARITHMETIC (7 rules, IDs 4-10)
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LIB_INIT_TIER1:
+    ; Rule 4: ext.multi_add — prereq: core.add
+    S_STORE     R[640], 4
+    S_STORE     R[641], 1
+    S_STORE     R[642], 1
+    S_STORE     R[643], 5
+    S_STORE     R[644], 1
+    S_STORE     R[645], 0                   ; prereq = core.add
+    ; Rule 5: ext.multi_sub — prereq: core.sub
+    S_STORE     R[650], 5
+    S_STORE     R[651], 1
+    S_STORE     R[652], 1
+    S_STORE     R[653], 6
+    S_STORE     R[654], 1
+    S_STORE     R[655], 1
+    ; Rule 6: ext.multi_mul — prereq: core.mul
+    S_STORE     R[660], 6
+    S_STORE     R[661], 1
+    S_STORE     R[662], 1
+    S_STORE     R[663], 7
+    S_STORE     R[664], 1
+    S_STORE     R[665], 2
+    ; Rule 7: ext.multi_div — prereq: core.div
+    S_STORE     R[670], 7
+    S_STORE     R[671], 1
+    S_STORE     R[672], 1
+    S_STORE     R[673], 8
+    S_STORE     R[674], 1
+    S_STORE     R[675], 3
+    ; Rule 8: ext.decompose
+    S_STORE     R[680], 8
+    S_STORE     R[681], 1
+    S_STORE     R[682], 1
+    S_STORE     R[683], 9
+    S_STORE     R[684], 0
+    ; Rule 9: ext.compose
+    S_STORE     R[690], 9
+    S_STORE     R[691], 1
+    S_STORE     R[692], 1
+    S_STORE     R[693], 10
+    S_STORE     R[694], 0
+    ; Rule 10: ext.order_of_ops — prereqs: all 4 core ops
+    S_STORE     R[700], 10
+    S_STORE     R[701], 1
+    S_STORE     R[702], 1
+    S_STORE     R[703], 11
+    S_STORE     R[704], 4
+    S_STORE     R[705], 0
+    S_STORE     R[706], 1
+    S_STORE     R[707], 2
+    S_STORE     R[708], 3
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; TIER 2: PROPERTIES (6 rules, IDs 11-16)
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LIB_INIT_TIER2:
+    ; 11: commutative, 12: associative, 13: distributive
+    ; 14: factor, 15: identity, 16: inverse
+    S_STORE     R[710], 11
+    S_STORE     R[711], 2
+    S_STORE     R[712], 2
+    S_STORE     R[713], 12
+    S_STORE     R[714], 2
+    S_STORE     R[715], 0
+    S_STORE     R[716], 2
+    S_STORE     R[720], 12
+    S_STORE     R[721], 2
+    S_STORE     R[722], 2
+    S_STORE     R[723], 13
+    S_STORE     R[724], 2
+    S_STORE     R[730], 13
+    S_STORE     R[731], 2
+    S_STORE     R[732], 2
+    S_STORE     R[733], 14
+    S_STORE     R[734], 2
+    S_STORE     R[740], 14
+    S_STORE     R[741], 2
+    S_STORE     R[742], 2
+    S_STORE     R[743], 15
+    S_STORE     R[750], 15
+    S_STORE     R[751], 2
+    S_STORE     R[752], 2
+    S_STORE     R[753], 16
+    S_STORE     R[760], 16
+    S_STORE     R[761], 2
+    S_STORE     R[762], 2
+    S_STORE     R[763], 17
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; TIERS 3-9: Rule count + range metadata
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LIB_INIT_TIER3:
+    S_STORE     R[770], 17
+    S_STORE     R[771], 34
+    S_STORE     R[772], 18
+    X_RET
+
+@RULE_LIB_INIT_TIER4:
+    S_STORE     R[780], 35
+    S_STORE     R[781], 47
+    S_STORE     R[782], 13
+    X_RET
+
+@RULE_LIB_INIT_TIER5:
+    S_STORE     R[790], 48
+    S_STORE     R[791], 62
+    S_STORE     R[792], 15
+    X_RET
+
+@RULE_LIB_INIT_TIER6:
+    S_STORE     R[800], 63
+    S_STORE     R[801], 70
+    S_STORE     R[802], 8
+    X_RET
+
+@RULE_LIB_INIT_TIER7:
+    S_STORE     R[810], 71
+    S_STORE     R[811], 84
+    S_STORE     R[812], 14
+    X_RET
+
+@RULE_LIB_INIT_TIER8:
+    S_STORE     R[820], 85
+    S_STORE     R[821], 96
+    S_STORE     R[822], 12
+    X_RET
+
+@RULE_LIB_INIT_TIER9:
+    S_STORE     R[830], 97
+    S_STORE     R[831], 110
+    S_STORE     R[832], 14
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; RULE LOOKUP & CHAIN RESOLUTION
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LOOKUP:
+    T_COMPOSE   R[85], MUL, R[80], R[8]
+    T_COMPOSE   R[85], ADD, R[85], R[86]
+    T_COMPOSE   R[86], ADD, R[85], R[3]
+    S_LOAD      R[81], R[86]
+    T_COMPOSE   R[86], ADD, R[85], R[4]
+    S_LOAD      R[82], R[86]
+    X_RET
+
+@RESOLVE_CHAIN:
+    S_STORE     R[89], 0
+    X_CALL      @RULE_LOOKUP
+    X_CMP       R[82], R[2]
+    X_JNZ       @RESOLVE_CHAIN_HIGHER
+    S_STORE     R[90], R[80]
+    S_STORE     R[89], 1
+    X_RET
+
+@RESOLVE_CHAIN_HIGHER:
+    S_STORE     R[90], 0
+    S_STORE     R[91], 1
+    S_STORE     R[92], 2
+    S_STORE     R[93], 3
+    S_STORE     R[94], R[80]
+    S_STORE     R[89], 5
+    X_RET
+
+@VALIDATE_CHAIN:
+    X_CMP       R[89], R[2]
+    X_JZ        @VALIDATE_CHAIN_FAIL
+    S_STORE     R[26], 1
+    X_RET
+@VALIDATE_CHAIN_FAIL:
+    S_STORE     R[26], 0
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SELF-TESTS
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RULE_LIB_SELFTEST:
+    X_CALL      @RULE_LIB_INIT_DOMAINS
+    X_CALL      @RULE_LIB_INIT_TIER0
+    X_CALL      @RULE_LIB_INIT_TIER1
+    X_CALL      @RULE_LIB_INIT_TIER2
+    X_CALL      @RULE_LIB_INIT_TIER3
+    X_CALL      @RULE_LIB_INIT_TIER4
+    X_CALL      @RULE_LIB_INIT_TIER5
+    X_CALL      @RULE_LIB_INIT_TIER6
+    X_CALL      @RULE_LIB_INIT_TIER7
+    X_CALL      @RULE_LIB_INIT_TIER8
+    X_CALL      @RULE_LIB_INIT_TIER9
+
+    ; Test 1: Total = 111
+    I_VERIFY    R[26], R[520], 111
+    ; Test 2: 10 domains
+    I_VERIFY    R[26], R[509], 9
+    ; Test 3: Tier 0 = 4 rules
+    I_VERIFY    R[26], R[510], 4
+    ; Test 4: No Tier 0 prerequisites
+    I_VERIFY    R[26], R[604], 0
+    I_VERIFY    R[26], R[614], 0
+    I_VERIFY    R[26], R[624], 0
+    I_VERIFY    R[26], R[634], 0
+    ; Test 5: Inverse pairs
+    I_VERIFY    R[26], R[605], 1
+    I_VERIFY    R[26], R[615], 0
+    I_VERIFY    R[26], R[625], 3
+    I_VERIFY    R[26], R[635], 2
+    ; Test 6: Tier 1 prereqs
+    I_VERIFY    R[26], R[644], 1
+    I_VERIFY    R[26], R[645], 0
+    ; Test 7: Chain resolution Tier 0
+    S_STORE     R[80], 0
+    X_CALL      @RESOLVE_CHAIN
+    I_VERIFY    R[26], R[89], 1
+    I_VERIFY    R[26], R[90], 0
+    ; Test 8: Chain resolution Tier 1
+    S_STORE     R[80], 4
+    X_CALL      @RESOLVE_CHAIN
+    I_VERIFY    R[26], R[94], 4
+    ; Test 9: Chain validation
+    X_CALL      @VALIDATE_CHAIN
+    I_VERIFY    R[26], R[26], 1
+    ; Test 10: Tier counts
+    I_VERIFY    R[26], R[772], 18
+    I_VERIFY    R[26], R[782], 13
+    I_VERIFY    R[26], R[812], 14
+
+    X_YIELD     10
+    X_RET
+
+@NUMERA_LAYER1_ENTRY:
+    X_CALL      @RULE_LIB_SELFTEST
+    X_HALT

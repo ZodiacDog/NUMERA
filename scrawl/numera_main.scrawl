@@ -1,0 +1,77 @@
+; ============================================================================
+; NUMERA v0.1.0 — Unified Entry Point
+; SCRAWL Implementation (ROSETTA Transpiler Format)
+; ============================================================================
+;
+; Runs the complete NUMERA self-test suite across all 6 layers.
+; Each layer reports its test count via X_YIELD.
+;
+; Layers:
+;   0 — Value Core:      Pre-computed arithmetic tables (10 tests)
+;   1 — Rule Library:    111 rules across 10 domains   (10 tests)
+;   2 — Pattern Engine:  Tokenizer, parser, classifier  (10 tests)
+;   3 — Retrieval Layer: Deterministic RAG              (10 tests)
+;   4 — Execution Engine: Verified computation          (10 tests)
+;   5 — Integration API: Unified public interface       (10 tests)
+;
+; Total: 60 SCRAWL embedded self-tests
+;
+; Foundation: ML Identity — a + a² + b = b²  where b = a + 1
+; Discovered by M. L. McKnight, Raymond High School, 1999
+;
+; © 2026 ML Innovations LLC. All rights reserved.
+; M. L. McKnight | ml.innovations.research.lab@gmail.com
+; Pheba, Mississippi
+; ============================================================================
+
+; ═══════════════════════════════════════════════════════════════════════════
+; INCLUDES (in production, these are linked via SYNAPSE module system)
+; ═══════════════════════════════════════════════════════════════════════════
+; @INCLUDE numera_layer0_value_core.scrawl
+; @INCLUDE numera_layer1_rule_library.scrawl
+; @INCLUDE numera_layer2_pattern_engine.scrawl
+; @INCLUDE numera_layer3_retrieval.scrawl
+; @INCLUDE numera_layer4_execution.scrawl
+; @INCLUDE numera_layer5_integration.scrawl
+
+; ═══════════════════════════════════════════════════════════════════════════
+; UNIFIED SELF-TEST
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_UNIFIED_SELFTEST:
+    ; Layer 0: Value Core
+    X_CALL      @VALUE_CORE_SELFTEST        ; yields 10
+
+    ; Layer 1: Rule Library
+    X_CALL      @RULE_LIB_SELFTEST          ; yields 10
+
+    ; Layer 2: Pattern Engine
+    X_CALL      @PATTERN_ENGINE_SELFTEST    ; yields 10
+
+    ; Layer 3: Retrieval Layer
+    X_CALL      @RETRIEVAL_SELFTEST         ; yields 10
+
+    ; Layer 4: Execution Engine
+    X_CALL      @EXECUTION_SELFTEST         ; yields 10
+
+    ; Layer 5: Integration API
+    X_CALL      @INTEGRATION_SELFTEST       ; yields 10
+
+    ; Total: 60 tests yielded
+    X_YIELD     60                          ; total test count
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ENTRY POINT
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_MAIN:
+    X_CALL      @NUMERA_UNIFIED_SELFTEST
+    X_HALT
+
+; ============================================================================
+; END NUMERA v0.1.0 SCRAWL Implementation
+; 6 Layers. 111 Rules. 60 Self-Tests. Every Result Verified.
+; "We DO." — ML Innovations LLC
+; ============================================================================

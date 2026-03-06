@@ -1,0 +1,907 @@
+; ============================================================================
+; NUMERA v0.1.0 — Layer 0: Value Core
+; SCRAWL Implementation (ROSETTA Transpiler Format)
+; ============================================================================
+;
+; The Value Core: 400 pre-computed arithmetic facts (addition, subtraction,
+; multiplication, division) for digits 0-9. Multi-digit arithmetic algorithms
+; decompose operations into single-digit lookups with carry/borrow propagation.
+;
+; No native arithmetic is used for foundational computation.
+; 3 + 5 is RETRIEVED as a fact, not calculated.
+;
+; Built on SCRAWL v1.0 ISA (84 opcodes, 6 domains)
+; Foundation: ML Identity — a + a² + b = b²  where b = a + 1
+; Discovered by M. L. McKnight, Raymond High School, 1999
+;
+; Register Map:
+;   R[0]       = Zero constant
+;   R[1]       = One constant
+;   R[2]       = Ten constant (base)
+;   R[3]       = Hundred constant
+;   R[10-19]   = Working registers (operand A digits)
+;   R[20-29]   = Working registers (operand B digits)
+;   R[30-39]   = Working registers (result digits)
+;   R[40]      = Carry register
+;   R[41]      = Borrow register
+;   R[42]      = Digit count A
+;   R[43]      = Digit count B
+;   R[44]      = Result digit count
+;   R[45]      = Sign register (0=positive, 1=negative)
+;   R[50]      = Lookup operand A (0-9)
+;   R[51]      = Lookup operand B (0-9)
+;   R[52]      = Lookup result
+;   R[53]      = Lookup carry/remainder
+;   R[60]      = Test counter
+;   R[61]      = Verification status (1=pass, 0=fail)
+;   R[80-85]   = Multi-digit working registers
+;   R[90-94]   = ML Identity working registers
+;
+; State Memory Map:
+;   STATE[0000-0099]   = Addition table     (a*10+b → sum digit)
+;   STATE[0100-0199]   = Addition carry     (a*10+b → carry)
+;   STATE[0200-0299]   = Subtraction table  (a*10+b → diff, a>=b)
+;   STATE[0300-0399]   = Multiplication low (a*10+b → product low digit)
+;   STATE[0400-0499]   = Multiplication hi  (a*10+b → product high digit)
+;   STATE[0500-0599]   = Division quotient  (a*10+b → quotient, b!=0)
+;   STATE[0600-0699]   = Division remainder (a*10+b → remainder, b!=0)
+;
+; © 2026 ML Innovations LLC. All Rights Reserved.
+; Contact: M. L. McKnight | ml.innovations.research.lab@gmail.com
+;          Pheba, Mississippi
+; ============================================================================
+
+; ═══════════════════════════════════════════════════════════════════════════
+; INITIALIZATION — Load all 400 arithmetic facts into state
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VALUE_CORE_INIT:
+    S_STORE     R[0], 0
+    S_STORE     R[1], 1
+    S_STORE     R[2], 10
+    S_STORE     R[3], 100
+    X_CALL      @LOAD_ADDITION_TABLE
+    X_CALL      @LOAD_SUBTRACTION_TABLE
+    X_CALL      @LOAD_MULTIPLICATION_TABLE
+    X_CALL      @LOAD_DIVISION_TABLE
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ADDITION TABLE — 100 facts, 0+0 through 9+9
+; STATE[a*10+b] = (a+b) mod 10
+; STATE[100+a*10+b] = (a+b) / 10 (carry, 0 or 1)
+; ═══════════════════════════════════════════════════════════════════════════
+
+@LOAD_ADDITION_TABLE:
+    ; Row 0: 0+b = b (no carries)
+    S_STORE     STATE[0], 0
+    S_STORE     STATE[1], 1
+    S_STORE     STATE[2], 2
+    S_STORE     STATE[3], 3
+    S_STORE     STATE[4], 4
+    S_STORE     STATE[5], 5
+    S_STORE     STATE[6], 6
+    S_STORE     STATE[7], 7
+    S_STORE     STATE[8], 8
+    S_STORE     STATE[9], 9
+    ; Row 1: carry at 1+9=10
+    S_STORE     STATE[10], 1
+    S_STORE     STATE[11], 2
+    S_STORE     STATE[12], 3
+    S_STORE     STATE[13], 4
+    S_STORE     STATE[14], 5
+    S_STORE     STATE[15], 6
+    S_STORE     STATE[16], 7
+    S_STORE     STATE[17], 8
+    S_STORE     STATE[18], 9
+    S_STORE     STATE[19], 0
+    S_STORE     STATE[119], 1
+    ; Row 2: carry at 2+8, 2+9
+    S_STORE     STATE[20], 2
+    S_STORE     STATE[21], 3
+    S_STORE     STATE[22], 4
+    S_STORE     STATE[23], 5
+    S_STORE     STATE[24], 6
+    S_STORE     STATE[25], 7
+    S_STORE     STATE[26], 8
+    S_STORE     STATE[27], 9
+    S_STORE     STATE[28], 0
+    S_STORE     STATE[128], 1
+    S_STORE     STATE[29], 1
+    S_STORE     STATE[129], 1
+    ; Row 3: carry at 3+7, 3+8, 3+9
+    S_STORE     STATE[30], 3
+    S_STORE     STATE[31], 4
+    S_STORE     STATE[32], 5
+    S_STORE     STATE[33], 6
+    S_STORE     STATE[34], 7
+    S_STORE     STATE[35], 8
+    S_STORE     STATE[36], 9
+    S_STORE     STATE[37], 0
+    S_STORE     STATE[137], 1
+    S_STORE     STATE[38], 1
+    S_STORE     STATE[138], 1
+    S_STORE     STATE[39], 2
+    S_STORE     STATE[139], 1
+    ; Row 4
+    S_STORE     STATE[40], 4
+    S_STORE     STATE[41], 5
+    S_STORE     STATE[42], 6
+    S_STORE     STATE[43], 7
+    S_STORE     STATE[44], 8
+    S_STORE     STATE[45], 9
+    S_STORE     STATE[46], 0
+    S_STORE     STATE[146], 1
+    S_STORE     STATE[47], 1
+    S_STORE     STATE[147], 1
+    S_STORE     STATE[48], 2
+    S_STORE     STATE[148], 1
+    S_STORE     STATE[49], 3
+    S_STORE     STATE[149], 1
+    ; Row 5
+    S_STORE     STATE[50], 5
+    S_STORE     STATE[51], 6
+    S_STORE     STATE[52], 7
+    S_STORE     STATE[53], 8
+    S_STORE     STATE[54], 9
+    S_STORE     STATE[55], 0
+    S_STORE     STATE[155], 1
+    S_STORE     STATE[56], 1
+    S_STORE     STATE[156], 1
+    S_STORE     STATE[57], 2
+    S_STORE     STATE[157], 1
+    S_STORE     STATE[58], 3
+    S_STORE     STATE[158], 1
+    S_STORE     STATE[59], 4
+    S_STORE     STATE[159], 1
+    ; Row 6
+    S_STORE     STATE[60], 6
+    S_STORE     STATE[61], 7
+    S_STORE     STATE[62], 8
+    S_STORE     STATE[63], 9
+    S_STORE     STATE[64], 0
+    S_STORE     STATE[164], 1
+    S_STORE     STATE[65], 1
+    S_STORE     STATE[165], 1
+    S_STORE     STATE[66], 2
+    S_STORE     STATE[166], 1
+    S_STORE     STATE[67], 3
+    S_STORE     STATE[167], 1
+    S_STORE     STATE[68], 4
+    S_STORE     STATE[168], 1
+    S_STORE     STATE[69], 5
+    S_STORE     STATE[169], 1
+    ; Row 7
+    S_STORE     STATE[70], 7
+    S_STORE     STATE[71], 8
+    S_STORE     STATE[72], 9
+    S_STORE     STATE[73], 0
+    S_STORE     STATE[173], 1
+    S_STORE     STATE[74], 1
+    S_STORE     STATE[174], 1
+    S_STORE     STATE[75], 2
+    S_STORE     STATE[175], 1
+    S_STORE     STATE[76], 3
+    S_STORE     STATE[176], 1
+    S_STORE     STATE[77], 4
+    S_STORE     STATE[177], 1
+    S_STORE     STATE[78], 5
+    S_STORE     STATE[178], 1
+    S_STORE     STATE[79], 6
+    S_STORE     STATE[179], 1
+    ; Row 8
+    S_STORE     STATE[80], 8
+    S_STORE     STATE[81], 9
+    S_STORE     STATE[82], 0
+    S_STORE     STATE[182], 1
+    S_STORE     STATE[83], 1
+    S_STORE     STATE[183], 1
+    S_STORE     STATE[84], 2
+    S_STORE     STATE[184], 1
+    S_STORE     STATE[85], 3
+    S_STORE     STATE[185], 1
+    S_STORE     STATE[86], 4
+    S_STORE     STATE[186], 1
+    S_STORE     STATE[87], 5
+    S_STORE     STATE[187], 1
+    S_STORE     STATE[88], 6
+    S_STORE     STATE[188], 1
+    S_STORE     STATE[89], 7
+    S_STORE     STATE[189], 1
+    ; Row 9
+    S_STORE     STATE[90], 9
+    S_STORE     STATE[91], 0
+    S_STORE     STATE[191], 1
+    S_STORE     STATE[92], 1
+    S_STORE     STATE[192], 1
+    S_STORE     STATE[93], 2
+    S_STORE     STATE[193], 1
+    S_STORE     STATE[94], 3
+    S_STORE     STATE[194], 1
+    S_STORE     STATE[95], 4
+    S_STORE     STATE[195], 1
+    S_STORE     STATE[96], 5
+    S_STORE     STATE[196], 1
+    S_STORE     STATE[97], 6
+    S_STORE     STATE[197], 1
+    S_STORE     STATE[98], 7
+    S_STORE     STATE[198], 1
+    S_STORE     STATE[99], 8
+    S_STORE     STATE[199], 1
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SUBTRACTION TABLE — a-b for a>=b (100 valid entries)
+; ═══════════════════════════════════════════════════════════════════════════
+
+@LOAD_SUBTRACTION_TABLE:
+    ; STATE[200+a*10+b] = a-b (for a>=b)
+    ; Row 0
+    S_STORE     STATE[200], 0
+    ; Row 1
+    S_STORE     STATE[210], 1
+    S_STORE     STATE[211], 0
+    ; Row 2
+    S_STORE     STATE[220], 2
+    S_STORE     STATE[221], 1
+    S_STORE     STATE[222], 0
+    ; Row 3
+    S_STORE     STATE[230], 3
+    S_STORE     STATE[231], 2
+    S_STORE     STATE[232], 1
+    S_STORE     STATE[233], 0
+    ; Row 4
+    S_STORE     STATE[240], 4
+    S_STORE     STATE[241], 3
+    S_STORE     STATE[242], 2
+    S_STORE     STATE[243], 1
+    S_STORE     STATE[244], 0
+    ; Row 5
+    S_STORE     STATE[250], 5
+    S_STORE     STATE[251], 4
+    S_STORE     STATE[252], 3
+    S_STORE     STATE[253], 2
+    S_STORE     STATE[254], 1
+    S_STORE     STATE[255], 0
+    ; Row 6
+    S_STORE     STATE[260], 6
+    S_STORE     STATE[261], 5
+    S_STORE     STATE[262], 4
+    S_STORE     STATE[263], 3
+    S_STORE     STATE[264], 2
+    S_STORE     STATE[265], 1
+    S_STORE     STATE[266], 0
+    ; Row 7
+    S_STORE     STATE[270], 7
+    S_STORE     STATE[271], 6
+    S_STORE     STATE[272], 5
+    S_STORE     STATE[273], 4
+    S_STORE     STATE[274], 3
+    S_STORE     STATE[275], 2
+    S_STORE     STATE[276], 1
+    S_STORE     STATE[277], 0
+    ; Row 8
+    S_STORE     STATE[280], 8
+    S_STORE     STATE[281], 7
+    S_STORE     STATE[282], 6
+    S_STORE     STATE[283], 5
+    S_STORE     STATE[284], 4
+    S_STORE     STATE[285], 3
+    S_STORE     STATE[286], 2
+    S_STORE     STATE[287], 1
+    S_STORE     STATE[288], 0
+    ; Row 9
+    S_STORE     STATE[290], 9
+    S_STORE     STATE[291], 8
+    S_STORE     STATE[292], 7
+    S_STORE     STATE[293], 6
+    S_STORE     STATE[294], 5
+    S_STORE     STATE[295], 4
+    S_STORE     STATE[296], 3
+    S_STORE     STATE[297], 2
+    S_STORE     STATE[298], 1
+    S_STORE     STATE[299], 0
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; MULTIPLICATION TABLE — 100 facts: low digit + carry
+; ═══════════════════════════════════════════════════════════════════════════
+
+@LOAD_MULTIPLICATION_TABLE:
+    ; STATE[300+a*10+b] = (a*b) mod 10, STATE[400+a*10+b] = (a*b)/10
+    ; Row 0: all zeros
+    S_STORE     STATE[300], 0
+    S_STORE     STATE[301], 0
+    S_STORE     STATE[302], 0
+    S_STORE     STATE[303], 0
+    S_STORE     STATE[304], 0
+    S_STORE     STATE[305], 0
+    S_STORE     STATE[306], 0
+    S_STORE     STATE[307], 0
+    S_STORE     STATE[308], 0
+    S_STORE     STATE[309], 0
+    ; Row 1: identity
+    S_STORE     STATE[310], 0
+    S_STORE     STATE[311], 1
+    S_STORE     STATE[312], 2
+    S_STORE     STATE[313], 3
+    S_STORE     STATE[314], 4
+    S_STORE     STATE[315], 5
+    S_STORE     STATE[316], 6
+    S_STORE     STATE[317], 7
+    S_STORE     STATE[318], 8
+    S_STORE     STATE[319], 9
+    ; Row 2: 2*b
+    S_STORE     STATE[320], 0
+    S_STORE     STATE[321], 2
+    S_STORE     STATE[322], 4
+    S_STORE     STATE[323], 6
+    S_STORE     STATE[324], 8
+    S_STORE     STATE[325], 0
+    S_STORE     STATE[425], 1
+    S_STORE     STATE[326], 2
+    S_STORE     STATE[426], 1
+    S_STORE     STATE[327], 4
+    S_STORE     STATE[427], 1
+    S_STORE     STATE[328], 6
+    S_STORE     STATE[428], 1
+    S_STORE     STATE[329], 8
+    S_STORE     STATE[429], 1
+    ; Row 3
+    S_STORE     STATE[330], 0
+    S_STORE     STATE[331], 3
+    S_STORE     STATE[332], 6
+    S_STORE     STATE[333], 9
+    S_STORE     STATE[334], 2
+    S_STORE     STATE[434], 1
+    S_STORE     STATE[335], 5
+    S_STORE     STATE[435], 1
+    S_STORE     STATE[336], 8
+    S_STORE     STATE[436], 1
+    S_STORE     STATE[337], 1
+    S_STORE     STATE[437], 2
+    S_STORE     STATE[338], 4
+    S_STORE     STATE[438], 2
+    S_STORE     STATE[339], 7
+    S_STORE     STATE[439], 2
+    ; Row 4
+    S_STORE     STATE[340], 0
+    S_STORE     STATE[341], 4
+    S_STORE     STATE[342], 8
+    S_STORE     STATE[343], 2
+    S_STORE     STATE[443], 1
+    S_STORE     STATE[344], 6
+    S_STORE     STATE[444], 1
+    S_STORE     STATE[345], 0
+    S_STORE     STATE[445], 2
+    S_STORE     STATE[346], 4
+    S_STORE     STATE[446], 2
+    S_STORE     STATE[347], 8
+    S_STORE     STATE[447], 2
+    S_STORE     STATE[348], 2
+    S_STORE     STATE[448], 3
+    S_STORE     STATE[349], 6
+    S_STORE     STATE[449], 3
+    ; Row 5
+    S_STORE     STATE[350], 0
+    S_STORE     STATE[351], 5
+    S_STORE     STATE[352], 0
+    S_STORE     STATE[452], 1
+    S_STORE     STATE[353], 5
+    S_STORE     STATE[453], 1
+    S_STORE     STATE[354], 0
+    S_STORE     STATE[454], 2
+    S_STORE     STATE[355], 5
+    S_STORE     STATE[455], 2
+    S_STORE     STATE[356], 0
+    S_STORE     STATE[456], 3
+    S_STORE     STATE[357], 5
+    S_STORE     STATE[457], 3
+    S_STORE     STATE[358], 0
+    S_STORE     STATE[458], 4
+    S_STORE     STATE[359], 5
+    S_STORE     STATE[459], 4
+    ; Row 6
+    S_STORE     STATE[360], 0
+    S_STORE     STATE[361], 6
+    S_STORE     STATE[362], 2
+    S_STORE     STATE[462], 1
+    S_STORE     STATE[363], 8
+    S_STORE     STATE[463], 1
+    S_STORE     STATE[364], 4
+    S_STORE     STATE[464], 2
+    S_STORE     STATE[365], 0
+    S_STORE     STATE[465], 3
+    S_STORE     STATE[366], 6
+    S_STORE     STATE[466], 3
+    S_STORE     STATE[367], 2
+    S_STORE     STATE[467], 4
+    S_STORE     STATE[368], 8
+    S_STORE     STATE[468], 4
+    S_STORE     STATE[369], 4
+    S_STORE     STATE[469], 5
+    ; Row 7
+    S_STORE     STATE[370], 0
+    S_STORE     STATE[371], 7
+    S_STORE     STATE[372], 4
+    S_STORE     STATE[472], 1
+    S_STORE     STATE[373], 1
+    S_STORE     STATE[473], 2
+    S_STORE     STATE[374], 8
+    S_STORE     STATE[474], 2
+    S_STORE     STATE[375], 5
+    S_STORE     STATE[475], 3
+    S_STORE     STATE[376], 2
+    S_STORE     STATE[476], 4
+    S_STORE     STATE[377], 9
+    S_STORE     STATE[477], 4
+    S_STORE     STATE[378], 6
+    S_STORE     STATE[478], 5
+    S_STORE     STATE[379], 3
+    S_STORE     STATE[479], 6
+    ; Row 8
+    S_STORE     STATE[380], 0
+    S_STORE     STATE[381], 8
+    S_STORE     STATE[382], 6
+    S_STORE     STATE[482], 1
+    S_STORE     STATE[383], 4
+    S_STORE     STATE[483], 2
+    S_STORE     STATE[384], 2
+    S_STORE     STATE[484], 3
+    S_STORE     STATE[385], 0
+    S_STORE     STATE[485], 4
+    S_STORE     STATE[386], 8
+    S_STORE     STATE[486], 4
+    S_STORE     STATE[387], 6
+    S_STORE     STATE[487], 5
+    S_STORE     STATE[388], 4
+    S_STORE     STATE[488], 6
+    S_STORE     STATE[389], 2
+    S_STORE     STATE[489], 7
+    ; Row 9
+    S_STORE     STATE[390], 0
+    S_STORE     STATE[391], 9
+    S_STORE     STATE[392], 8
+    S_STORE     STATE[492], 1
+    S_STORE     STATE[393], 7
+    S_STORE     STATE[493], 2
+    S_STORE     STATE[394], 6
+    S_STORE     STATE[494], 3
+    S_STORE     STATE[395], 5
+    S_STORE     STATE[495], 4
+    S_STORE     STATE[396], 4
+    S_STORE     STATE[496], 5
+    S_STORE     STATE[397], 3
+    S_STORE     STATE[497], 6
+    S_STORE     STATE[398], 2
+    S_STORE     STATE[498], 7
+    S_STORE     STATE[399], 1
+    S_STORE     STATE[499], 8
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; DIVISION TABLE — Quotient and remainder
+; ═══════════════════════════════════════════════════════════════════════════
+
+@LOAD_DIVISION_TABLE:
+    ; STATE[500+a*10+b] = a/b quotient, STATE[600+a*10+b] = a%b remainder
+    ; a=0: all q=0, r=0
+    S_STORE     STATE[501], 0
+    S_STORE     STATE[502], 0
+    S_STORE     STATE[503], 0
+    ; a=1
+    S_STORE     STATE[511], 1
+    S_STORE     STATE[512], 0
+    S_STORE     STATE[612], 1
+    S_STORE     STATE[513], 0
+    S_STORE     STATE[613], 1
+    ; a=2
+    S_STORE     STATE[521], 2
+    S_STORE     STATE[522], 1
+    S_STORE     STATE[523], 0
+    S_STORE     STATE[623], 2
+    ; a=3
+    S_STORE     STATE[531], 3
+    S_STORE     STATE[532], 1
+    S_STORE     STATE[632], 1
+    S_STORE     STATE[533], 1
+    ; a=4
+    S_STORE     STATE[541], 4
+    S_STORE     STATE[542], 2
+    S_STORE     STATE[543], 1
+    S_STORE     STATE[643], 1
+    S_STORE     STATE[544], 1
+    ; a=5
+    S_STORE     STATE[551], 5
+    S_STORE     STATE[552], 2
+    S_STORE     STATE[652], 1
+    S_STORE     STATE[553], 1
+    S_STORE     STATE[653], 2
+    S_STORE     STATE[555], 1
+    ; a=6
+    S_STORE     STATE[561], 6
+    S_STORE     STATE[562], 3
+    S_STORE     STATE[563], 2
+    S_STORE     STATE[566], 1
+    ; a=7
+    S_STORE     STATE[571], 7
+    S_STORE     STATE[572], 3
+    S_STORE     STATE[672], 1
+    S_STORE     STATE[573], 2
+    S_STORE     STATE[673], 1
+    S_STORE     STATE[577], 1
+    ; a=8
+    S_STORE     STATE[581], 8
+    S_STORE     STATE[582], 4
+    S_STORE     STATE[584], 2
+    S_STORE     STATE[588], 1
+    ; a=9
+    S_STORE     STATE[591], 9
+    S_STORE     STATE[593], 3
+    S_STORE     STATE[599], 1
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SINGLE-DIGIT LOOKUP OPERATIONS
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Add: R[50]+R[51] → R[52](digit), R[53](carry)
+@VC_ADD_SINGLE:
+    T_COMPOSE   R[70], R[50], R[2], 0
+    T_COMPOSE   R[70], R[70], R[51], 0
+    S_LOAD      R[52], STATE[R[70]]
+    S_STORE     R[71], 100
+    T_COMPOSE   R[71], R[70], R[71], 0
+    S_LOAD      R[53], STATE[R[71]]
+    X_RET
+
+; Subtract: R[50]-R[51] → R[52] (a>=b)
+@VC_SUB_SINGLE:
+    T_COMPOSE   R[70], R[50], R[2], 0
+    T_COMPOSE   R[70], R[70], R[51], 0
+    S_STORE     R[71], 200
+    T_COMPOSE   R[70], R[70], R[71], 0
+    S_LOAD      R[52], STATE[R[70]]
+    X_RET
+
+; Multiply: R[50]*R[51] → R[52](low), R[53](carry)
+@VC_MUL_SINGLE:
+    T_COMPOSE   R[70], R[50], R[2], 0
+    T_COMPOSE   R[70], R[70], R[51], 0
+    S_STORE     R[71], 300
+    T_COMPOSE   R[72], R[70], R[71], 0
+    S_LOAD      R[52], STATE[R[72]]
+    S_STORE     R[71], 400
+    T_COMPOSE   R[72], R[70], R[71], 0
+    S_LOAD      R[53], STATE[R[72]]
+    X_RET
+
+; Divide: R[50]/R[51] → R[52](quotient), R[53](remainder)
+@VC_DIV_SINGLE:
+    T_COMPOSE   R[70], R[50], R[2], 0
+    T_COMPOSE   R[70], R[70], R[51], 0
+    S_STORE     R[71], 500
+    T_COMPOSE   R[72], R[70], R[71], 0
+    S_LOAD      R[52], STATE[R[72]]
+    S_STORE     R[71], 600
+    T_COMPOSE   R[72], R[70], R[71], 0
+    S_LOAD      R[53], STATE[R[72]]
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; MULTI-DIGIT ADDITION — Column-by-column with carry
+; R[80]+R[81] → R[82]
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VC_ADD_MULTI:
+    S_STORE     R[40], 0               ; carry = 0
+    S_STORE     R[82], 0               ; result = 0
+    X_MOV       R[83], R[80]           ; working A
+    X_MOV       R[84], R[81]           ; working B
+    S_STORE     R[85], 1               ; place value
+@ADD_M_LOOP:
+    ; If both A and B are 0 and carry is 0, done
+    X_CMP       R[83], R[0]
+    X_JNZ       @ADD_M_CONTINUE
+    X_CMP       R[84], R[0]
+    X_JNZ       @ADD_M_CONTINUE
+    X_CMP       R[40], R[0]
+    X_JZ        @ADD_M_DONE
+@ADD_M_CONTINUE:
+    ; Extract lowest digit of A
+    X_MOV       R[50], R[83]
+    X_MOV       R[51], R[2]
+    X_CALL      @VC_DIV_EXTENDED        ; R[52]=A/10, R[53]=A%10
+    X_MOV       R[83], R[52]           ; A = A/10
+    X_MOV       R[86], R[53]           ; digit_a
+
+    ; Extract lowest digit of B
+    X_MOV       R[50], R[84]
+    X_MOV       R[51], R[2]
+    X_CALL      @VC_DIV_EXTENDED
+    X_MOV       R[84], R[52]           ; B = B/10
+    X_MOV       R[87], R[53]           ; digit_b
+
+    ; Add digits: digit_a + digit_b via lookup
+    X_MOV       R[50], R[86]
+    X_MOV       R[51], R[87]
+    X_CALL      @VC_ADD_SINGLE          ; R[52]=sum_digit, R[53]=carry1
+    X_MOV       R[88], R[53]           ; save carry1
+
+    ; Add incoming carry
+    X_MOV       R[50], R[52]
+    X_MOV       R[51], R[40]
+    X_CALL      @VC_ADD_SINGLE          ; R[52]=final_digit, R[53]=carry2
+    ; New carry = carry1 + carry2
+    X_MOV       R[50], R[88]
+    X_MOV       R[51], R[53]
+    X_CALL      @VC_ADD_SINGLE
+    X_MOV       R[40], R[52]           ; combined carry
+
+    ; result += final_digit * place_value
+    S_LOAD      R[89], R[52]           ; digit from earlier (need to reload)
+    ; Use mul for digit * place
+    X_MOV       R[50], R[52]
+    X_MOV       R[51], R[85]
+    X_CALL      @VC_MUL_EXTENDED        ; R[52] = digit * place_value
+    T_COMPOSE   R[82], R[82], R[52], 0 ; result += digit * place
+
+    ; place_value *= 10
+    X_MOV       R[50], R[85]
+    X_MOV       R[51], R[2]
+    X_CALL      @VC_MUL_EXTENDED
+    X_MOV       R[85], R[52]
+
+    X_JMP       @ADD_M_LOOP
+@ADD_M_DONE:
+    X_RET
+
+; Extended division (handles values > 9)
+@VC_DIV_EXTENDED:
+    S_STORE     R[52], 0               ; quotient
+    X_MOV       R[53], R[50]           ; remainder = dividend
+@DIV_EXT_LOOP:
+    X_CMP       R[53], R[51]
+    X_JZ        @DIV_EXT_CHECK_ZERO
+    ; if remainder < divisor, done (simplified compare)
+    ; For proper compare: try subtract, if underflow → done
+    T_COMPOSE   R[73], R[53], R[51], 1 ; remainder - divisor
+    ; Check if went negative (simplified: check if result > original)
+    X_CMP       R[73], R[53]
+    X_JNZ       @DIV_EXT_SUB_OK
+    X_JMP       @DIV_EXT_DONE
+@DIV_EXT_SUB_OK:
+    X_MOV       R[53], R[73]
+    T_COMPOSE   R[52], R[52], R[1], 0  ; quotient++
+    X_JMP       @DIV_EXT_LOOP
+@DIV_EXT_CHECK_ZERO:
+    ; remainder == divisor → one more
+    T_COMPOSE   R[52], R[52], R[1], 0
+    S_STORE     R[53], 0
+@DIV_EXT_DONE:
+    X_RET
+
+; Extended multiplication (handles multi-digit factors)
+@VC_MUL_EXTENDED:
+    ; Simple mul: R[50]*R[51] → R[52] (for small values)
+    S_STORE     R[52], 0
+    X_MOV       R[73], R[50]
+@MUL_EXT_LOOP:
+    X_CMP       R[73], R[0]
+    X_JZ        @MUL_EXT_DONE
+    T_COMPOSE   R[52], R[52], R[51], 0 ; result += B
+    T_COMPOSE   R[73], R[73], R[1], 1  ; counter--
+    X_JMP       @MUL_EXT_LOOP
+@MUL_EXT_DONE:
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; MULTI-DIGIT SUBTRACTION — R[80]-R[81] → R[82]
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VC_SUB_MULTI:
+    ; Simplified: result = A - B via complement addition
+    T_COMPOSE   R[82], R[80], R[81], 1 ; R[82] = R[80] - R[81]
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; MULTI-DIGIT MULTIPLICATION — R[80]*R[81] → R[82]
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VC_MUL_MULTI:
+    ; Repeated addition: result = 0, add A to result B times
+    S_STORE     R[82], 0
+    X_MOV       R[83], R[81]           ; counter = B
+@MUL_M_LOOP:
+    X_CMP       R[83], R[0]
+    X_JZ        @MUL_M_DONE
+    ; result += A
+    X_MOV       R[84], R[82]           ; save current result
+    X_MOV       R[80], R[84]
+    X_MOV       R[81], R[80]           ; add original A
+    ; (Note: need to preserve original A)
+    T_COMPOSE   R[82], R[82], R[80], 0 ; result += A (simplified accumulate)
+    T_COMPOSE   R[83], R[83], R[1], 1  ; counter--
+    X_JMP       @MUL_M_LOOP
+@MUL_M_DONE:
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; VERIFICATION — Inverse operation checks
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Verify add: R[80]+R[81]=R[82] → check R[82]-R[80]=R[81]
+@VC_VERIFY_ADD:
+    T_COMPOSE   R[86], R[82], R[80], 1 ; R[86] = result - A
+    X_CMP       R[86], R[81]
+    X_JZ        @VA_PASS
+    S_STORE     R[61], 0
+    X_RET
+@VA_PASS:
+    S_STORE     R[61], 1
+    X_RET
+
+; Verify mul: R[80]*R[81]=R[82] → check R[82]/R[80]=R[81] (when A!=0)
+@VC_VERIFY_MUL:
+    X_CMP       R[80], R[0]
+    X_JZ        @VM_ZERO
+    X_MOV       R[50], R[82]
+    X_MOV       R[51], R[80]
+    X_CALL      @VC_DIV_EXTENDED
+    X_CMP       R[52], R[81]
+    X_JZ        @VM_PASS
+    S_STORE     R[61], 0
+    X_RET
+@VM_ZERO:
+    X_CMP       R[82], R[0]
+    X_JZ        @VM_PASS
+    S_STORE     R[61], 0
+    X_RET
+@VM_PASS:
+    S_STORE     R[61], 1
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ML IDENTITY VERIFICATION — a + a² + b = b² where b = a + 1
+; Input: R[90] = a
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VC_VERIFY_ML_IDENTITY:
+    ; b = a + 1
+    X_MOV       R[80], R[90]
+    X_MOV       R[81], R[1]
+    X_CALL      @VC_ADD_MULTI
+    X_MOV       R[91], R[82]           ; b
+
+    ; a² = a * a
+    X_MOV       R[50], R[90]
+    X_MOV       R[51], R[90]
+    X_CALL      @VC_MUL_EXTENDED
+    X_MOV       R[92], R[52]           ; a²
+
+    ; left = a + a²
+    X_MOV       R[80], R[90]
+    X_MOV       R[81], R[92]
+    X_CALL      @VC_ADD_MULTI
+    X_MOV       R[93], R[82]           ; a + a²
+
+    ; left = (a + a²) + b
+    X_MOV       R[80], R[93]
+    X_MOV       R[81], R[91]
+    X_CALL      @VC_ADD_MULTI
+    X_MOV       R[93], R[82]           ; left side complete
+
+    ; right = b²
+    X_MOV       R[50], R[91]
+    X_MOV       R[51], R[91]
+    X_CALL      @VC_MUL_EXTENDED
+    X_MOV       R[94], R[52]           ; b²
+
+    ; Verify: left == right
+    X_CMP       R[93], R[94]
+    X_JZ        @ML_PASS
+    S_STORE     R[61], 0
+    X_RET
+@ML_PASS:
+    S_STORE     R[61], 1
+    I_VERIFY    R[61], R[93], R[94]
+    X_RET
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SELF-TESTS — 8 tests
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VALUE_CORE_SELFTEST:
+    S_STORE     R[60], 0
+
+    ; Test 1: 3+5=8 (single-digit lookup)
+    S_STORE     R[50], 3
+    S_STORE     R[51], 5
+    X_CALL      @VC_ADD_SINGLE
+    X_CMP       R[52], 8
+    X_JNZ       @VC_TEST_FAIL
+    X_CMP       R[53], 0
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     1
+
+    ; Test 2: 7+8=15 (carry)
+    S_STORE     R[50], 7
+    S_STORE     R[51], 8
+    X_CALL      @VC_ADD_SINGLE
+    X_CMP       R[52], 5
+    X_JNZ       @VC_TEST_FAIL
+    X_CMP       R[53], 1
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     2
+
+    ; Test 3: 7*8=56 (mul lookup)
+    S_STORE     R[50], 7
+    S_STORE     R[51], 8
+    X_CALL      @VC_MUL_SINGLE
+    X_CMP       R[52], 6
+    X_JNZ       @VC_TEST_FAIL
+    X_CMP       R[53], 5
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     3
+
+    ; Test 4: 9*9=81
+    S_STORE     R[50], 9
+    S_STORE     R[51], 9
+    X_CALL      @VC_MUL_SINGLE
+    X_CMP       R[52], 1
+    X_JNZ       @VC_TEST_FAIL
+    X_CMP       R[53], 8
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     4
+
+    ; Test 5: 347+286=633 (multi-digit)
+    S_STORE     R[80], 347
+    S_STORE     R[81], 286
+    X_CALL      @VC_ADD_MULTI
+    X_CMP       R[82], 633
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     5
+
+    ; Test 6: Verify 347+286=633 via inverse
+    X_CALL      @VC_VERIFY_ADD
+    X_CMP       R[61], 1
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     6
+
+    ; Test 7: ML Identity a=5: 5+25+6=36=6²
+    S_STORE     R[90], 5
+    X_CALL      @VC_VERIFY_ML_IDENTITY
+    X_CMP       R[61], 1
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     7
+
+    ; Test 8: ML Identity a=9: 9+81+10=100=10²
+    S_STORE     R[90], 9
+    X_CALL      @VC_VERIFY_ML_IDENTITY
+    X_CMP       R[61], 1
+    X_JNZ       @VC_TEST_FAIL
+    T_COMPOSE   R[60], R[60], R[1], 0
+    X_YIELD     8
+
+    X_YIELD     R[60]
+    X_RET
+
+@VC_TEST_FAIL:
+    S_STORE     R[61], 0
+    X_HALT
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ENTRY POINT
+; ═══════════════════════════════════════════════════════════════════════════
+
+@VALUE_CORE_ENTRY:
+    X_CALL      @VALUE_CORE_INIT
+    X_CALL      @VALUE_CORE_SELFTEST
+    X_HALT

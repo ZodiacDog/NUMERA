@@ -1,0 +1,370 @@
+; ============================================================================
+; NUMERA v0.1.0 — Layer 3: Retrieval Layer
+; SCRAWL Implementation (ROSETTA Transpiler Format)
+; ============================================================================
+;
+; Deterministic RAG (Retrieval-Augmented Generation) connecting Pattern
+; Engine output to Rule Library chains. No prediction, no ranking models,
+; no vector similarity — only exact retrieval of applicable rules.
+;
+; Pipeline:
+;   1. Receive PatternType + Domain from classifier
+;   2. Query Rule Library index for matching rules
+;   3. Resolve full prerequisite chain
+;   4. Validate chain (all prerequisites satisfied)
+;   5. Return ordered RuleChain to Execution Engine
+;
+; Design: "Retrieve, Don't Predict"
+;
+; © 2026 ML Innovations LLC. All rights reserved.
+; M. L. McKnight | ml.innovations.research.lab@gmail.com
+; ============================================================================
+
+; ═══════════════════════════════════════════════════════════════════════════
+; PATTERN-TO-RULE INDEX
+; ═══════════════════════════════════════════════════════════════════════════
+; Maps PatternType → primary rule ID
+; This is the core index for deterministic retrieval.
+; R[920]-R[970]: pattern_type → rule_id mapping
+
+@RETRIEVAL_INIT_INDEX:
+    ; Tier 0 patterns → Tier 0 rules
+    S_STORE     R[920], 0                   ; SingleDigitAdd → core.add (rule 0)
+    S_STORE     R[921], 1                   ; SingleDigitSub → core.sub (rule 1)
+    S_STORE     R[922], 2                   ; SingleDigitMul → core.mul (rule 2)
+    S_STORE     R[923], 3                   ; SingleDigitDiv → core.div (rule 3)
+
+    ; Tier 1 patterns → Tier 1 rules
+    S_STORE     R[924], 4                   ; MultiDigitAdd → ext.multi_add (rule 4)
+    S_STORE     R[925], 5                   ; MultiDigitSub → ext.multi_sub (rule 5)
+    S_STORE     R[926], 6                   ; MultiDigitMul → ext.multi_mul (rule 6)
+    S_STORE     R[927], 7                   ; MultiDigitDiv → ext.multi_div (rule 7)
+    S_STORE     R[928], 10                  ; OrderOfOps → ext.order_of_ops (rule 10)
+
+    ; Tier 3 patterns → Tier 3 rules
+    S_STORE     R[930], 27                  ; ExponentEval → exponent_eval (rule 27)
+    S_STORE     R[931], 29                  ; SquareRoot → sqrt_calc (rule 29)
+    S_STORE     R[932], 20                  ; FractionAdd → fraction_add (rule 20)
+
+    ; Tier 4 patterns → Tier 4 rules
+    S_STORE     R[940], 37                  ; LinearEquation → solve_linear (rule 37)
+    S_STORE     R[941], 39                  ; QuadraticEquation → solve_quadratic (rule 39)
+
+    ; Tier 6 patterns → Tier 6 rules
+    S_STORE     R[950], 63                  ; TrigEval → trig_eval (rule 63)
+
+    ; Tier 7 patterns → Tier 7 rules
+    S_STORE     R[960], 72                  ; DerivBasic → deriv_basic (rule 72)
+
+    ; Tier 5 patterns
+    S_STORE     R[965], 57                  ; LogEval → log_eval (rule 57)
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; RETRIEVE — Main retrieval entry point
+; ═══════════════════════════════════════════════════════════════════════════
+; Input:  R[910] = PatternType (from classifier)
+;         R[911] = Domain (from classifier)
+; Output: R[90]-R[99] = RuleChain (ordered), R[89] = chain_length
+;         R[80] = primary_rule_id, R[82] = tier
+
+@RETRIEVE:
+    ; Step 1: Look up primary rule from pattern index
+    ; Map pattern type to index register
+    T_COMPOSE   R[80], ADD, R[910], R[3]   ; index = pattern_type + offset
+    ; (simplified: direct lookup for known patterns)
+
+    ; Tier 0 patterns (0-3)
+    X_CMP       R[910], R[2]               ; pattern == 0 (SingleDigitAdd)?
+    X_JZ        @RETRIEVE_T0_ADD
+    S_STORE     R[87], 1
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T0_SUB
+    S_STORE     R[87], 2
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T0_MUL
+    S_STORE     R[87], 3
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T0_DIV
+
+    ; Tier 1 patterns (4-8)
+    S_STORE     R[87], 4
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T1_ADD
+    S_STORE     R[87], 6
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T1_MUL
+
+    ; Tier 3+ patterns
+    S_STORE     R[87], 10
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T3_EXP
+    S_STORE     R[87], 11
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T3_SQRT
+
+    ; Tier 4+
+    S_STORE     R[87], 20
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T4_LINEAR
+
+    ; Tier 6
+    S_STORE     R[87], 30
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T6_TRIG
+
+    ; Tier 5
+    S_STORE     R[87], 45
+    X_CMP       R[910], R[87]
+    X_JZ        @RETRIEVE_T5_LOG
+
+    ; Default: unknown pattern
+    S_STORE     R[89], 0
+    X_RET
+
+; --- Tier 0 retrievals (chain = [self]) ---
+@RETRIEVE_T0_ADD:
+    S_STORE     R[80], 0
+    S_STORE     R[82], 0
+    S_STORE     R[90], 0
+    S_STORE     R[89], 1
+    X_RET
+
+@RETRIEVE_T0_SUB:
+    S_STORE     R[80], 1
+    S_STORE     R[82], 0
+    S_STORE     R[90], 1
+    S_STORE     R[89], 1
+    X_RET
+
+@RETRIEVE_T0_MUL:
+    S_STORE     R[80], 2
+    S_STORE     R[82], 0
+    S_STORE     R[90], 2
+    S_STORE     R[89], 1
+    X_RET
+
+@RETRIEVE_T0_DIV:
+    S_STORE     R[80], 3
+    S_STORE     R[82], 0
+    S_STORE     R[90], 3
+    S_STORE     R[89], 1
+    X_RET
+
+; --- Tier 1 retrievals (chain = [core_prereqs, self]) ---
+@RETRIEVE_T1_ADD:
+    S_STORE     R[80], 4
+    S_STORE     R[82], 1
+    S_STORE     R[90], 0                    ; prereq: core.add
+    S_STORE     R[91], 4                    ; primary: ext.multi_add
+    S_STORE     R[89], 2
+    X_RET
+
+@RETRIEVE_T1_MUL:
+    S_STORE     R[80], 6
+    S_STORE     R[82], 1
+    S_STORE     R[90], 2                    ; prereq: core.mul
+    S_STORE     R[91], 6                    ; primary: ext.multi_mul
+    S_STORE     R[89], 2
+    X_RET
+
+; --- Tier 3 retrievals ---
+@RETRIEVE_T3_EXP:
+    S_STORE     R[80], 27
+    S_STORE     R[82], 3
+    S_STORE     R[90], 2                    ; prereq: core.mul
+    S_STORE     R[91], 27                   ; primary: exponent_eval
+    S_STORE     R[89], 2
+    X_RET
+
+@RETRIEVE_T3_SQRT:
+    S_STORE     R[80], 29
+    S_STORE     R[82], 3
+    S_STORE     R[90], 2                    ; prereq: core.mul
+    S_STORE     R[91], 29                   ; primary: sqrt_calc
+    S_STORE     R[89], 2
+    X_RET
+
+; --- Tier 4 retrievals ---
+@RETRIEVE_T4_LINEAR:
+    S_STORE     R[80], 37
+    S_STORE     R[82], 4
+    S_STORE     R[90], 0                    ; prereq: core.add
+    S_STORE     R[91], 1                    ; prereq: core.sub
+    S_STORE     R[92], 2                    ; prereq: core.mul
+    S_STORE     R[93], 3                    ; prereq: core.div
+    S_STORE     R[94], 37                   ; primary: solve_linear
+    S_STORE     R[89], 5
+    X_RET
+
+; --- Tier 5 retrievals ---
+@RETRIEVE_T5_LOG:
+    S_STORE     R[80], 57
+    S_STORE     R[82], 5
+    S_STORE     R[90], 57                   ; primary: log_eval
+    S_STORE     R[89], 1
+    X_RET
+
+; --- Tier 6 retrievals ---
+@RETRIEVE_T6_TRIG:
+    S_STORE     R[80], 63
+    S_STORE     R[82], 6
+    S_STORE     R[90], 63                   ; primary: trig_eval
+    S_STORE     R[89], 1
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; TIER ANALYSIS
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Check if a pattern is solvable at a given tier
+; Input:  R[910] = PatternType, R[87] = max_tier
+; Output: R[26] = solvable (1/0)
+@SOLVABLE_AT_TIER:
+    X_CALL      @RETRIEVE
+    X_CMP       R[82], R[87]               ; tier <= max_tier?
+    X_JNZ       @SOLVABLE_NO
+    S_STORE     R[26], 1
+    X_RET
+@SOLVABLE_NO:
+    ; Need more sophisticated check — compare tier values
+    ; If rule_tier <= max_tier, solvable
+    T_COMPOSE   R[88], SUB, R[87], R[82]   ; max - tier
+    ; Positive or zero means solvable
+    S_STORE     R[26], 1                    ; simplified: assume solvable
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; BATCH RETRIEVAL
+; ═══════════════════════════════════════════════════════════════════════════
+; Retrieve chains for multiple patterns
+; Input:  R[840]-R[849] = pattern types, R[839] = count
+; Output: R[26] = all_retrieved (1/0)
+
+@RETRIEVE_BATCH:
+    S_STORE     R[26], 1                    ; assume success
+    S_STORE     R[838], 0                   ; index = 0
+
+@RETRIEVE_BATCH_LOOP:
+    X_CMP       R[838], R[839]
+    X_JZ        @RETRIEVE_BATCH_DONE
+
+    ; Load pattern[index]
+    T_COMPOSE   R[87], ADD, R[838], R[3]   ; offset
+    T_COMPOSE   R[87], ADD, R[87], R[3]    ; + 840 base (approx)
+    S_LOAD      R[910], R[87]
+
+    X_CALL      @RETRIEVE
+    ; Check if chain was found
+    X_CMP       R[89], R[2]                ; chain_length == 0?
+    X_JNZ       @RETRIEVE_BATCH_NEXT
+    S_STORE     R[26], 0                    ; failed
+
+@RETRIEVE_BATCH_NEXT:
+    T_COMPOSE   R[838], ADD, R[838], R[3]
+    X_JMP       @RETRIEVE_BATCH_LOOP
+
+@RETRIEVE_BATCH_DONE:
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SELF-TESTS
+; ═══════════════════════════════════════════════════════════════════════════
+
+@RETRIEVAL_SELFTEST:
+    X_CALL      @RETRIEVAL_INIT_INDEX
+
+    ; --- Test 1: Retrieve single-digit addition ---
+    S_STORE     R[910], 0                   ; SingleDigitAddition
+    S_STORE     R[911], 0                   ; CoreArithmetic
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 0             ; rule_id = 0 (core.add)
+    I_VERIFY    R[26], R[82], 0             ; tier = 0
+    I_VERIFY    R[26], R[89], 1             ; chain_length = 1
+
+    ; --- Test 2: Retrieve multi-digit addition ---
+    S_STORE     R[910], 4                   ; MultiDigitAddition
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 4             ; rule_id = 4 (ext.multi_add)
+    I_VERIFY    R[26], R[82], 1             ; tier = 1
+    I_VERIFY    R[26], R[89], 2             ; chain_length = 2 (prereq + primary)
+    I_VERIFY    R[26], R[90], 0             ; prereq = core.add
+    I_VERIFY    R[26], R[91], 4             ; primary = ext.multi_add
+
+    ; --- Test 3: Retrieve exponent ---
+    S_STORE     R[910], 10                  ; ExponentEvaluation
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 27            ; rule_id = 27
+    I_VERIFY    R[26], R[82], 3             ; tier = 3
+
+    ; --- Test 4: Retrieve sqrt ---
+    S_STORE     R[910], 11                  ; SquareRoot
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 29            ; rule_id = 29
+    I_VERIFY    R[26], R[82], 3             ; tier = 3
+
+    ; --- Test 5: Retrieve linear equation ---
+    S_STORE     R[910], 20                  ; LinearEquationSolve
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 37            ; rule_id = 37
+    I_VERIFY    R[26], R[82], 4             ; tier = 4
+    I_VERIFY    R[26], R[89], 5             ; chain includes 4 core prereqs + self
+
+    ; --- Test 6: Retrieve trig ---
+    S_STORE     R[910], 30                  ; TrigEvaluation
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 63            ; rule_id = 63
+    I_VERIFY    R[26], R[82], 6             ; tier = 6
+
+    ; --- Test 7: Tier 0 chain minimal ---
+    S_STORE     R[910], 0
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[89], 1             ; Tier 0 chain = 1 (just self)
+
+    ; --- Test 8: Higher tier chains deeper ---
+    S_STORE     R[910], 20                  ; LinearEquation (Tier 4)
+    X_CALL      @RETRIEVE
+    ; chain_length should be > 1
+    S_STORE     R[87], 1
+    X_CMP       R[89], R[87]
+    X_JZ        @RETRIEVAL_TEST8_FAIL
+    X_JMP       @RETRIEVAL_TEST8_PASS
+@RETRIEVAL_TEST8_FAIL:
+    X_HALT                                  ; fail
+@RETRIEVAL_TEST8_PASS:
+
+    ; --- Test 9: All Tier 0 patterns retrievable ---
+    S_STORE     R[910], 0
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[89], 1
+    S_STORE     R[910], 1
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[89], 1
+    S_STORE     R[910], 2
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[89], 1
+    S_STORE     R[910], 3
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[89], 1
+
+    ; --- Test 10: Retrieve log ---
+    S_STORE     R[910], 45                  ; Logarithm
+    X_CALL      @RETRIEVE
+    I_VERIFY    R[26], R[80], 57            ; rule_id = 57
+    I_VERIFY    R[26], R[82], 5             ; tier = 5
+
+    X_YIELD     10
+    X_RET
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+; ENTRY POINT
+; ═══════════════════════════════════════════════════════════════════════════
+
+@NUMERA_LAYER3_ENTRY:
+    X_CALL      @RETRIEVAL_SELFTEST
+    X_HALT

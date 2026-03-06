@@ -1,0 +1,27 @@
+[package]
+name = "numera"
+version = "1.0.0"
+edition = "2021"
+authors = ["M. L. McKnight <ml.innovations.research.lab@gmail.com>"]
+description = "NUMERA: Numerical Understanding through Modular Engine for Retrieval and Application — A deterministic mathematical intelligence engine for AI systems."
+repository = "https://github.com/mlinnovationsllc/numera"
+keywords = ["mathematics", "ai-safety", "deterministic", "verification", "llm"]
+categories = ["mathematics", "science"]
+
+# ═══════════════════════════════════════════════════════════════
+# NO LICENSE. This is FREE. Use it. Stop the hallucinations.
+# ═══════════════════════════════════════════════════════════════
+
+[lib]
+name = "numera"
+path = "src/lib.rs"
+
+[[bin]]
+name = "numera-demo"
+path = "src/bin/demo.rs"
+
+[dependencies]
+# Zero external dependencies. Rust standard library only.
+
+[dev-dependencies]
+# Tests use only std
